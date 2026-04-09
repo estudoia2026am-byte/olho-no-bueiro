@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src * 'unsafe-inline' 'unsafe-eval' data: blob:;">
+    <title>Olho no Bueiro IA</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 min-h-screen font-sans pb-10">
+<div class="max-w-2xl mx-auto p-4">
+    <header class="bg-blue-700 text-white p-6 rounded-t-xl shadow-lg border-b-4 border-yellow-400">
+        <h1 class="text-2xl font-bold">Olho no Bueiro IA 🚧</h1>
+        <p class="text-sm opacity-90 mt-1 italic">Mapeamento Inteligente - Manaus 2026</p>
+    </header>
+    <main class="bg-white p-6 rounded-b-xl shadow-md">
+        <div class="mb-6">
+            <label class="block text-gray-700 font-bold mb-2">Descreva o local e o problema:</label>
+            <textarea id="relato" rows="4"
+                class="w-full p-4 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:outline-none"
+                placeholder="Ex: Avenida Santos Dias, Riacho-Doce. Bueiro sem tampa perto do mercadinho."></textarea>
+        </div>
+        <button onclick="analisarDenuncia()" id="btn-analisar"
+            class="w-full bg-blue-600 hover:bg-blue-800 text-white font-black py-4 rounded-xl shadow-lg uppercase">
+            Gerar Ofício e Localizar no Mapa
+        </button>
+        <div id="loader" class="hidden flex flex-col items-center mt-10">
+            <p class="text-blue-700 font-medium">A IA está processando...</p>
+        </div>
+        <div id="resultado" class="hidden mt-8 space-y-6">
+            <div class="grid grid-cols-2 gap-4">
+                <div id="risco-card" class="p-4 bg-gray-50 rounded-xl border-l-4 shadow-sm">
+                    <span class="text-[10px] uppercase text-gray-500 font-extrabold">Nível de Risco</span>
+                    <p id="risco-out" class="text-lg font-bold">-</p>
+                </div>
+                <div class="p-4 bg-gray-50 rounded-xl border-l-4 border-blue-500 shadow-sm">
+                    <span class="text-[10px] uppercase text-gray-500 font-extrabold">Local Identificado</span>
+                    <p id="bairro-out" class="text-lg font-bold text-gray-800">-</p>
+                </div>
+            </div>
+            <div>
+                <h3 class="text-xs font-black text-gray-500 uppercase mb-2">📍 Localização (Google Maps)</h3>
+                <div id="map-frame-container"></div>
+            </div>
+            <div class="bg-amber-50 border-2 border-amber-200 rounded-xl p-6">
+                <div class="flex justify-between items-start mb-4">
+                    <h3 class="font-bold text-amber-900 text-sm">📄 Ofício Formal SEMINF</h3>
+                    <button onclick="copiarTexto()" class="text-[10px] bg-amber-200 text-amber-800 px-3 py-1 rounded font-bold">Copiar</button>
+                </div>
+                <div id="oficio-corpo" class="text-xs text-amber-950 font-serif whitespace-pre-wrap leading-relaxed"></div>
+            </div>
+            <div class="p-4 bg-blue-50 rounded-xl">
+                <h4 class="text-[10px] font-black text-blue-800 uppercase mb-1">Análise de IA</h4>
+                <p id="parecer-out" class="text-sm text-blue-900 italic">-</p>
+            </div>
+        </div>
+    </main>
+    <footer class="mt-8 text-center text-[10px] text-gray-400">
+        <p>AV3 - Startup IA | Divair - CETAM Manaus 2026</p>
+    </footer>
+</div>
+<script>
+    const apiKey = "AIzaSyBQSHjJBNZtiveyPqw8tThUhUtU3TDsw5s";
+
+    async function analisarDenuncia() {
+        const relato = document.getElementById('relato').value;
+        if (!relato || relato.length < 10) {
+            alert("Por favor, descreva o local com mais detalhes.");
+            return;
+        }
+
+        document.getElementById('btn-analisar').disabled = true;
+        document.getElementById('loader').classList.remove('hidden');
+        document.getElementById('resultado').classList.add('hidden');
+
+        const prompt = `Você é um especialista em logística urbana de Manaus.
+A partir do relato abaixo, responda SOMENTE com um JSON válido, sem texto adicional, sem markdown, sem backticks.
+O JSON deve ter exatamente estas chaves: local_mapa, bairro, risco, parecer, oficio.
+- local_mapa: endereço para Google Maps
+- bairro: nome do bairro
+- risco: ALTO, MÉDIO ou BAIXO
+- parecer: justificativa técnica
+- oficio: texto formal para SEMINF
+
+Relato: ${relato}`;
+
+        try {
+            const response = await fetch(
+                "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=" + apiKey,
+                {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        contents: [{ parts: [{ text: prompt }] }],
+                        generationConfig: { temperature: 0.3, maxOutputTokens: 2048 }
+                    })
+                }
+            );
+
+            if (!response.ok) {
+                const err = await response.json();
+                throw new Error(err.error?.message || "Erro " + response.status);
+            }
+
+            const data = await response.json();
+            let texto = data.candidates[0].content.parts[0].text;
+            texto = texto.replace(/```json|```/g, '').trim();
+            const result = JSON.parse(texto);
+            exibirResultado(result);
+
+        } catch (error) {
+            alert("Erro: " + error.message);
+        } finally {
+            document.getElementById('btn-analisar').disabled = false;
+            document.getElementById('loader').classList.add('hidden');
+        }
+    }
+
+    function exibirResultado(data) {
+        document.getElementById('bairro-out').innerText = data.bairro || '-';
+        document.getElementById('risco-out').innerText = data.risco || '-';
+        document.getElementById('parecer-out').innerText = data.parecer || '-';
+        document.getElementById('oficio-corpo').innerText = data.oficio || '-';
+
+        const query = encodeURIComponent(data.local_mapa);
+        document.getElementById('map-frame-container').innerHTML =
+            `<iframe src="https://maps.google.com/maps?q=${query}&t=&z=15&ie=UTF8&iwloc=&output=embed" 
+             width="100%" height="250" style="border-radius:12px;border:2px solid #e2e8f0;"></iframe>`;
+
+        const cardRisco = document.getElementById('risco-card');
+        const textoRisco = document.getElementById('risco-out');
+        if (data.risco === 'ALTO') {
+            cardRisco.className = 'p-4 bg-red-50 rounded-xl border-l-4 border-red-600 shadow-sm';
+            textoRisco.className = 'text-lg font-bold text-red-700';
+        } else if (data.risco === 'MÉDIO') {
+            cardRisco.className = 'p-4 bg-orange-50 rounded-xl border-l-4 border-orange-500 shadow-sm';
+            textoRisco.className = 'text-lg font-bold text-orange-700';
+        } else {
+            cardRisco.className = 'p-4 bg-green-50 rounded-xl border-l-4 border-green-500 shadow-sm';
+            textoRisco.className = 'text-lg font-bold text-green-700';
+        }
+
+        document.getElementById('resultado').classList.remove('hidden');
+    }
+
+    function copiarTexto() {
+        const texto = document.getElementById('oficio-corpo').innerText;
+        if (navigator.clipboard) {
+            navigator.clipboard.writeText(texto).then(() => alert("Copiado!"));
+        } else {
+            const el = document.createElement('textarea');
+            el.value = texto;
+            document.body.appendChild(el);
+            el.select();
+            document.execCommand('copy');
+            document.body.removeChild(el);
+            alert("Copiado!");
+        }
+    }
+</script>
+</body>
+</html>
